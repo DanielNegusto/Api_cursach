@@ -1,6 +1,6 @@
 import pytest
 
-from src.classes import Vacancy
+from src.vacancy import Vacancy
 
 
 @pytest.fixture
