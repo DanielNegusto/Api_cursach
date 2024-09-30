@@ -1,0 +1,42 @@
+[
+    {
+        "name": "Яндекс",
+        "employer_id": 1740
+    },
+    {
+        "name": "Сбербанк",
+        "employer_id": 3529
+    },
+    {
+        "name": "Mail.ru Group (VK)",
+        "employer_id": 15478
+    },
+    {
+        "name": "Северсталь",
+        "employer_id": 339
+    },
+    {
+        "name": "Альфа-Банк",
+        "employer_id": 80
+    },
+    {
+        "name": "Лаборатория Касперского",
+        "employer_id": 3776
+    },
+    {
+        "name": "OZON",
+        "employer_id": 2180
+    },
+    {
+        "name": "МТС",
+        "employer_id": 3776
+    },
+    {
+        "name": "Тинькофф",
+        "employer_id": 78638
+    },
+    {
+        "name": "X5 Group",
+        "employer_id": 4716984
+    }
+]

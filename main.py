@@ -1,102 +1,147 @@
+import os
+from datetime import datetime
+
+from dotenv import load_dotenv
+
 from src.API import HeadHunterAPI
-from src.file_handler import JSONSaver
-from src.vacancy import Vacancy, filter_vacancies, print_vacancies, get_vacancies_by_salary, sort_vacancies, \
-    get_top_vacancies
+from src.bd_manager import DBManager
+
+load_dotenv()
 
 
 def user_interaction():
-    json_saver = JSONSaver()
-    print("Добро пожаловать в программу поиска вакансий на hh.ru!")
+    # Подключение к базе данных
+    db = DBManager(os.getenv("DB_NAME"), os.getenv("DB_USER"), os.getenv("DB_PASSWORD"))
+
+    # Проверяем наличие таблиц
+    if not db.tables_exist():
+        db.create_tables()
+        print("Таблицы созданы.")
+
+    # Загружаем компании из JSON
+    db.load_companies_from_json("data/companies.json")
 
     while True:
-        query = input("Введите вакансию, по которой вы хотите найти информацию: ")
-        vacancies_list = hh_api.get_vacancies(query)
-        vacancies = Vacancy.cast_to_object_list(vacancies_list)
-
-        if vacancies:
-            print("Найдены вакансии по вашему запросу.")
-            break
-        else:
-            print("Вакансий по вашему запросу не найдено. Попробуйте другой запрос.")
-
-    while True:
-        print("1. Фильтровать вакансии по ключевым словам")
-        print("2. Получить вакансии в определенном диапазоне зарплат")
-        print("3. Сортировать вакансии по зарплате")
-        print("4. Получить топ N вакансий")
-        print("5. Печать всех вакансий")
-        print("6. Изменить поисковый запрос")
-        print("7. Выход")
+        print("\nДобро пожаловать в систему управления вакансиями!")
+        print("Выберите действие:")
+        print("1. Загрузить данные о компаниях и вакансиях в базу данных")
+        print("2. Показать список компаний и количество вакансий у каждой")
+        print("3. Показать все вакансии")
+        print("4. Показать среднюю зарплату по вакансиям")
+        print("5. Показать вакансии с зарплатой выше средней")
+        print("6. Поиск вакансий по ключевому слову")
+        print("7. Очистить базу данных")
+        print("8. Добавить компанию в базу данных")
+        print("9. Выйти")
 
         choice = input("Введите номер действия: ")
 
         if choice == "1":
-            keywords = input("Введите ключевые слова для фильтрации: ").split()
-            filtered_vacancies = filter_vacancies(vacancies, keywords)
-            print_vacancies(filtered_vacancies)
-            if filtered_vacancies:
-                save_choice = input("Хотите сохранить отфильтрованные вакансии в файл? (да/нет): ")
-                if save_choice.lower() == "да":
-                    json_saver.update_vacancy_file(filtered_vacancies)
-                    print("Отфильтрованные вакансии сохранены в файл.")
-            else:
-                print("Вакансий по заданным ключевым словам не найдено.")
+            api = HeadHunterAPI()
+            companies = db.get_all_companies()
+
+            for company in companies:
+                if "id" in company and company["id"] is not None:
+                    company_id = company["id"]
+                    employer_id = company["employer_id"]  # Используем employer_id
+                    vacancies = api.get_company_vacancies(employer_id)
+
+                    for vacancy in vacancies.get("items", []):
+                        title = vacancy["name"]  # Название вакансии
+                        salary_min = vacancy["salary"]["from"] if vacancy["salary"] else None  # Минимальная зарплата
+                        salary_max = vacancy["salary"]["to"] if vacancy["salary"] else None  # Максимальная зарплата
+                        url = vacancy["alternate_url"]  # Ссылка на вакансию
+                        description = (
+                            vacancy["snippet"]["responsibility"] if "snippet" in vacancy else None
+                        )  # Описание вакансии
+                        published_at = datetime.fromisoformat(
+                            vacancy["published_at"].replace("Z", "+00:00")
+                        )  # Дата публикации
+
+                        # Вставка вакансии в базу данных
+                        db.insert_vacancy(
+                            company_id=company_id,
+                            title=title,
+                            salary_min=salary_min,
+                            salary_max=salary_max,
+                            url=url,
+                            description=description,
+                            published_at=published_at,
+                        )
+                else:
+                    print(f"Skipping company with no id: {company}")
+
+            print("Данные успешно загружены в базу данных.")
 
         elif choice == "2":
-            salary_range = input("Введите диапазон зарплат (например, 50000-100000): ")
-            filtered_vacancies = get_vacancies_by_salary(vacancies, salary_range)
-            print_vacancies(filtered_vacancies)
-            if filtered_vacancies:
-                save_choice = input("Хотите сохранить вакансии в файл? (да/нет): ")
-                if save_choice.lower() == "да":
-                    json_saver.update_vacancy_file(filtered_vacancies)
-                    print("Вакансии в заданном диапазоне зарплат сохранены в файл.")
-            else:
-                print("Вакансий в заданном диапазоне зарплат не найдено.")
+            # Показать список компаний и количество вакансий
+            companies_and_vacancies = db.get_companies_and_vacancies_count()
+            for row in companies_and_vacancies:
+                print(f"Компания: {row['name']}, Количество вакансий: {row['vacancies_count']}")
 
         elif choice == "3":
-            sorted_vacancies = sort_vacancies(vacancies)
-            print_vacancies(sorted_vacancies)
-            save_choice = input("Хотите сохранить отсортированные вакансии в файл? (да/нет): ")
-            if save_choice.lower() == "да":
-                json_saver.update_vacancy_file(sorted_vacancies)
-                print("Отсортированные вакансии сохранены в файл.")
+            # Показать все вакансии
+            vacancies = db.get_all_vacancies()
+            for vacancy in vacancies:
+                print(
+                    f"Компания: {vacancy['company_name']}, Вакансия: {vacancy['vacancy_title']}, "
+                    f"Зарплата: от {vacancy['salary_min']} до {vacancy['salary_max']}, Ссылка: {vacancy['url']}"
+                )
 
         elif choice == "4":
-            top_n = int(input("Введите количество вакансий для вывода: "))
-            top_vacancies = get_top_vacancies(sort_vacancies(vacancies), top_n)
-            print_vacancies(top_vacancies)
-            save_choice = input(f"Хотите сохранить топ {top_n} вакансий в файл? (да/нет): ")
-            if save_choice.lower() == "да":
-                json_saver.update_vacancy_file(top_vacancies)
-                print(f"Топ {top_n} вакансий сохранены в файл.")
+            # Показать среднюю зарплату
+            avg_salary = db.get_avg_salary()
+            print(f"Средняя зарплата по всем вакансиям: {avg_salary}")
 
         elif choice == "5":
-            print_vacancies(vacancies)
+            # Показать вакансии с зарплатой выше средней
+            vacancies = db.get_vacancies_with_higher_salary()
+            for vacancy in vacancies:
+                print(
+                    f"Компания: {vacancy['company_name']}, Вакансия: {vacancy['vacancy_title']}, "
+                    f"Зарплата: от {vacancy['salary_min']} до {vacancy['salary_max']}, Ссылка: {vacancy['url']}"
+                )
 
         elif choice == "6":
-            while True:
-                query = input("Введите новую вакансию для поиска: ")
-                vacancies_list = hh_api.get_vacancies(query)
-                vacancies = Vacancy.cast_to_object_list(vacancies_list)
-                if vacancies:
-                    print("Найдены вакансии по вашему новому запросу.")
-                    break
-                else:
-                    print("Вакансий по вашему новому запросу не найдено. Попробуйте другой запрос.")
-            print("Поисковый запрос изменен.")
+            # Поиск вакансий по ключевому слову
+            keyword = input("Введите ключевое слово для поиска: ")
+            vacancies = db.get_vacancies_with_keyword(keyword)
+            for vacancy in vacancies:
+                print(
+                    f"Компания: {vacancy['company_name']}, Вакансия: {vacancy['vacancy_title']}, "
+                    f"Зарплата: от {vacancy['salary_min']} до {vacancy['salary_max']}, Ссылка: {vacancy['url']}"
+                )
 
         elif choice == "7":
-            print("До свидания!")
+            db.clear_vacancies_table()
+            print("База данных очищена.")
+
+        elif choice == "8":
+            # Добавить компанию
+            employer_id = input("Введите employer_id компании: ")
+            api = HeadHunterAPI()
+            company_info = api.get_employer(employer_id)
+            if company_info:
+                company_name = company_info["name"]
+                print(f"Компания с employer_id {employer_id} найдена: {company_name}")
+                response = input("Добавить компанию в базу данных? (да/нет): ")
+                if response.lower() == "да":
+                    db.insert_company(company_name, employer_id)
+                    print("Компания добавлена в базу данных.")
+                else:
+                    print("Компания не добавлена.")
+            else:
+                print("Компания с таким employer_id не найдена.")
+
+        elif choice == "9":
+            # Выйти из программы
+            db.close()
+            print("Программа завершена.")
             break
 
         else:
-            print("Неправильный выбор. Попробуйте еще раз.")
-
-
-
+            print("Неверный выбор. Пожалуйста, попробуйте снова.")
 
 
 if __name__ == "__main__":
-    hh_api = HeadHunterAPI()
     user_interaction()
